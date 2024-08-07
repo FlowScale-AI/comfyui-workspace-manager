@@ -3,7 +3,6 @@ import { File, Key, MagnifyingGlass, XCircle } from "phosphor-react";
 import React, { useCallback, useEffect, useState } from "react";
 import { CivitCard, Dropdown } from "../components";
 import { useStateRef } from "../../../customHooks/useStateRef";
-import { useDisclosure } from "@chakra-ui/react";
 import {
   MODEL_TYPE_TO_FOLDER_MAPPING,
   ALL_MODEL_TYPES,
@@ -12,7 +11,7 @@ import { getModelFromCivitAPi } from "../../install-models/util/getModelFromCivi
 import { getCivitApiKey } from "../../../utils/civitUtils";
 import { userSettingsTable } from "../../../db-tables/WorkspaceDB";
 import { installModelsApi } from "../../api/modelsApi";
-import { getAllFoldersList } from "../../../Api";
+import { getAllFoldersList, updateUserModelsJsonGithub } from "../../../Api";
 import ChooseDownloadFolder from "../components/ChooseDownloadFolder";
 import InstallModelProgress from "./InstallModelProgress";
 import toast from "react-hot-toast";
@@ -25,14 +24,18 @@ export const CivitAIModelsTab = ({ modelType: modelTypeProp }) => {
   const [modelType, setModelType] = useState(modelTypeProp);
   const [searchQuery, setSearchQuery] = useState("");
   const [installing, setInstalling] = useState([]);
+  const [isOpen, setIsOpen] = useState(false);
   const [fileState, setFile, file] = useStateRef();
-  const { isOpen, onOpen, onClose: onCloseChooseFolderModal } = useDisclosure();
   const [foldersList, setFoldersList] = useState({});
   const [folderOptions, setFolderOptions] = useState([]);
   const [defaultFolders, setDefaultFolders] = useState(
     MODEL_TYPE_TO_FOLDER_MAPPING,
   );
   const [isCivitAIKeyModalOpen, setIsCivitAIKeyModalOpen] = useState(false);
+  const urlParams = new URLSearchParams(window.location.search);
+  const repoName = urlParams.get("repoName");
+  const ghUser = urlParams.get("ghUser");
+  const flowscaleToken = urlParams.get("token");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -84,13 +87,26 @@ export const CivitAIModelsTab = ({ modelType: modelTypeProp }) => {
       url,
     });
     setFile(undefined);
-    onCloseChooseFolderModal();
+    setIsOpen(false);
   };
   const onClickInstallModel = async (_file, model) => {
+    // if (ghUser && repoName && flowscaleToken) {
+    //   updateUserModelsJsonGithub(
+    //     ghUser,
+    //     repoName,
+    //     {
+    //       name: _file?.name,
+    //       url: `https://civitai.com/api/download/models/${_file?.id}`,
+    //       path: selectedFolderOption.split("/").slice(-2).join("/"),
+    //       fetch_type: "download",
+    //     },
+    //     flowscaleToken,
+    //   );
+    // }
     const folderPath = defaultFolders[model.type];
     setFile(_file);
     if (folderPath == null) {
-      onOpen();
+      setIsOpen(true);
     } else {
       downloadModels(folderPath);
     }
@@ -107,8 +123,22 @@ export const CivitAIModelsTab = ({ modelType: modelTypeProp }) => {
   }, [modelType]);
 
   useEffect(() => {
-    if (modelType && foldersList[MODEL_TYPE_TO_FOLDER_MAPPING[modelType]]) {
-      let folderArr = foldersList[MODEL_TYPE_TO_FOLDER_MAPPING[modelType]];
+    if (Object.keys(foldersList).length > 0) updateFolderOptions(modelType);
+  }, [modelType, foldersList]);
+
+  useEffect(() => {
+    if (modelType && folderOptions.length > 0) {
+      setSelectedFolderOption(folderOptions[0]?.value);
+      updateDefaultFolders(modelType, folderOptions[0]?.value);
+    }
+  }, [folderOptions]);
+
+  const updateFolderOptions = (curModelType) => {
+    if (
+      curModelType &&
+      foldersList[MODEL_TYPE_TO_FOLDER_MAPPING[curModelType]]
+    ) {
+      let folderArr = foldersList[MODEL_TYPE_TO_FOLDER_MAPPING[curModelType]];
       setFolderOptions(
         folderArr.map((item) => ({
           name: item.split("/").slice(-2).join("/"),
@@ -116,7 +146,7 @@ export const CivitAIModelsTab = ({ modelType: modelTypeProp }) => {
         })),
       );
     }
-  }, [modelType, foldersList]);
+  };
 
   return (
     <Box
@@ -195,8 +225,8 @@ export const CivitAIModelsTab = ({ modelType: modelTypeProp }) => {
                 (option) => option.value === selectedFolderOption,
               )}
               onSelect={(index) => {
-                setSelectedFolderOption(folderOptions[index].value);
                 updateDefaultFolders(modelType, folderOptions[index].value);
+                setSelectedFolderOption(folderOptions[index].value);
               }}
               label="Folder"
               placeholder="Select download folder"
@@ -245,7 +275,9 @@ export const CivitAIModelsTab = ({ modelType: modelTypeProp }) => {
           }}
         >
           <InstallModelProgress />
-          {/* <pre>{JSON.stringify(folderOptions, null, 4)}</pre> */}
+          {/* <pre>{JSON.stringify(modelType, null, 4)}</pre>
+          <pre>{JSON.stringify(defaultFolders, null, 4)}</pre>
+          <pre>{JSON.stringify(selectedFolderOption, null, 4)}</pre> */}
 
           {models.length === 0 ? (
             <Box
@@ -290,7 +322,7 @@ export const CivitAIModelsTab = ({ modelType: modelTypeProp }) => {
       <ChooseDownloadFolder
         fileSelected={!!fileState}
         isOpen={isOpen}
-        onClose={onCloseChooseFolderModal}
+        onClose={() => setIsOpen(false)}
         selectFolder={(folderPath, customUrl) => {
           downloadModels(folderPath, file.current ? undefined : customUrl);
         }}
